@@ -106,10 +106,10 @@
           body: JSON.stringify([{ rater: currentStudentId, target: num, score: value }]),
           headers: { "Content-Type": "application/json" }
         })
-          .then(response => response.text())
+          .then(response => response.json())
           .then(result => {
             console.log("已送出至 Google 試算表：", result);
-            alert("✅ 成功送出評分：" + result);
+            alert("✅ 成功送出評分：" + result.message);
           })
           .catch(error => {
             console.error("送出失敗：", error);
@@ -174,7 +174,6 @@
 
           renderScoringUI();
 
-          // 新增畫面更新邏輯
           studentNumbers.forEach(num => {
             const avgElem = document.getElementById(`avg-${num}`);
             const listElem = document.getElementById(`list-${num}`);
