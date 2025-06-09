@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>學生簡報評分系統</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background-color: #f0f0f0;
+    }
+    h2 {
+      color: #333;
+    }
+    .student {
+      margin-bottom: 20px;
+      background: white;
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    }
+    .score-input {
+      width: 50px;
+    }
+    .average {
+      font-weight: bold;
+      color: green;
+    }
+    .score-list {
+      font-size: 0.9em;
+      color: #666;
+      margin-top: 5px;
+    }
+    #login-section {
+      background: white;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius:  10px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    }
+    #export-button, #submit-to-google-button {
+      margin-top: 10px;
+      padding: 10px 15px;
+      font-size: 16px;
+    }
+    #teacher-summary {
+      margin-top: 30px;
+      background: #fff9e6;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+  <h2>學生簡報即時評分系統</h2>
+
+  <div id="login-section">
+    <label for="studentId">請選擇你的座號：</label>
+    <select id="studentId">
+      <option value="">-- 請選擇 --</option>
+    </select>
+    <button onclick="confirmStudentId()">開始評分</button>
+  </div>
+
+  <div id="container" style="display: none;"></div>
+  <button id="export-button" style="display: none;" onclick="exportToExcel()">📥 匯出所有評分 (Excel)</button>
+
+  <div id="teacher-summary" style="display: none;">
+    <h3>👩‍🏫 老師專用評分統計</h3>
+    <div id="teacher-stats"></div>
+  </div>
+
+  <script>
+    const studentNumbers = [2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+    const scores = {};
+    const submissions = {};
+    let currentStudentId = null;
+    const googleScriptUrl = "https://script.google.com/macros/s/AKfycbxaPvbx7KHI_rb1CC8v3pQhY6GXeBPzcXrYhyUU1fIcuEAN1Q8ENio5OhL80toYOWCL/exec";
+
+    const studentIdSelect = document.getElementById('studentId');
+    [0, ...studentNumbers].forEach(num => {
+      const option = document.createElement('option');
+      option.value = num;
+      option.textContent = `${num === 0 ? '老師（0號）' : num + ' 號'}`;
+      studentIdSelect.appendChild(option);
+    });
+
+    function confirmStudentId() {
+      const selected = studentIdSelect.value;
+      if (!selected) {
+        alert('請先選擇你的座號再開始評分');
+        return;
+      }
+      currentStudentId = parseInt(selected);
+      document.getElementById('login-section').style.display = 'none';
+      document.getElementById('container').style.display = 'block';
+      document.getElementById('export-button').style.display = 'inline-block';
+      if (currentStudentId === 0) {
+        document.getElementById('teacher-summary').style.display = 'block';
+        updateTeacherStats();
+      }
+      renderScoringUI();
+    }
+
+    function renderScoringUI() {
+      const container = document.getElementById('container');
+      container.innerHTML = '';
+      studentNumbers.forEach(num => {
+        scores[num] = scores[num] || [];
+        submissions[num] = submissions[num] || {};
+        const div = document.createElement('div');
+        div.className = 'student';
+        div.innerHTML = `
+          <h3>學生 ${num} 號</h3>
+          <input class="score-input" type="number" min="0" max="10" id="input-${num}" placeholder="0~10"> 
+          <button onclick="addScore(${num})">送出評分</button>
+          <p>平均分數：<span class="average" id="avg-${num}">尚無評分</span></p>
+          <div class="score-list" id="list-${num}">目前評分：無</div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function addScore(num) {
+      const input = document.getElementById(`input-${num}`);
+      const value = parseFloat(input.value);
+      if (!isNaN(value) && value >= 0 && value <= 10) {
+        if (parseInt(num) === parseInt(currentStudentId)) {
+          alert('不能幫自己評分喔！');
+          return;
+        }
+        if (submissions[num][currentStudentId] !== undefined) {
+          alert('你已經評過這位同學囉！');
+          return;
+        }
+        submissions[num][currentStudentId] = value;
+        scores[num] = Object.values(submissions[num]);
+        const avg = (scores[num].reduce((a, b) => a + b, 0) / scores[num].length).toFixed(2);
+        document.getElementById(`avg-${num}`).textContent = `${avg} 分（共 ${scores[num].length} 人評分）`;
+        document.getElementById(`list-${num}`).textContent = `目前評分：${Object.entries(submissions[num]).map(([k, v]) => `${k}號: ${v}`).join(', ')}`;
+        input.value = '';
+
+        if (currentStudentId === 0) updateTeacherStats();
+
+        fetch(googleScriptUrl, {
+          method: "POST",
+          body: JSON.stringify([{ rater: currentStudentId, target: num, score: value }]),
+          headers: { "Content-Type": "application/json" }
+        })
+          .then(response => response.text())
+          .then(result => console.log("已送出至 Google 試算表：", result))
+          .catch(error => console.error("送出失敗：", error));
+      } else {
+        alert('請輸入 0~10 的分數');
+      }
+    }
+
+    function updateTeacherStats() {
+      const container = document.getElementById('teacher-stats');
+      container.innerHTML = '';
+      studentNumbers.forEach(num => {
+        const score = submissions[num][0];
+        if (score !== undefined) {
+          const div = document.createElement('div');
+          div.textContent = `學生 ${num} 號：老師評分 ${score} 分`;
+          container.appendChild(div);
+        }
+      });
+    }
+
+    function exportToExcel() {
+      let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
+      csvContent += '評分者,被評者,分數\n';
+
+      studentNumbers.forEach(target => {
+        const ratingObj = submissions[target];
+        for (const rater in ratingObj) {
+          csvContent += `${rater},${target},${ratingObj[rater]}\n`;
+        }
+      });
+
+      csvContent += '\n平均分數彙總\n';
+      studentNumbers.forEach(target => {
+        if (scores[target] && scores[target].length > 0) {
+          const avg = (scores[target].reduce((a, b) => a + b, 0) / scores[target].length).toFixed(2);
+          csvContent += `${target}號,${avg}\n`;
+        }
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', '學生評分結果.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  </script>
+</body>
+</html>
